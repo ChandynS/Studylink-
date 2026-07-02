@@ -1,59 +1,89 @@
+//start new chat
 <?php
-// Load system core (DB, sessions, helpers)
+
 require_once("includes/init.php");
 
-// Load page layout
+requireLogin();
+
 include("includes/header.php");
 include("includes/navbar.php");
 
-// Ensure user is logged in
-requireLogin();
+/*Gets the chats of both users  */
+$otherUserID = isset($_GET["id"]) ? (int)$_GET["id"] : 0;
 
-// Get current user ID
-$userID = $_SESSION["user_id"];
+if ($otherUserID <= 0)
+{
+    header("Location: inbox.php");
+    exit();
+}
 
-/* fetches conversations and shows all users who have chatted with the logged-in user*/
-$sSQL = 
-"SELECT DISTINCT u.user_id, u.username FROM users u JOIN messages m ON (u.user_id = m.sender_id 
-OR u.user_id = m.receiver_id WHERE u.user_id != $userID AND (m.sender_id = $userID OR m.receiver_id = $userID)";
+/* mark messages as read */
+$sSQL = " UPDATE messages SET is_read = 1 WHERE sender_id = $otherUserID AND receiver_id = {$_SESSION["user_id"]} ";
+
+mysqli_query($objConnection, $sSQL);
+
+/* sends a message to the other user */
+if (isset($_POST["btnSend"]))
+{
+    $message = sanitizeInput($_POST["message"]);
+
+    if (!empty($message))
+    {
+        $senderID = $_SESSION["user_id"];
+
+        $sSQL = "INSERT INTO messages (sender_id, receiver_id, message) VALUES ($senderID, $otherUserID, '$message')";
+        mysqli_query($objConnection, $sSQL);
+    }
+}
+
+/* Loads messages */
+$sSQL = "
+SELECT * FROM messages WHERE ( sender_id = {$_SESSION["user_id"]} AND receiver_id = $otherUserID)
+OR(sender_id = $otherUserID
+AND receiver_id = {$_SESSION["user_id"]})
+ORDER BY sent_at ASC";
 
 $objResult = mysqli_query($objConnection, $sSQL);
+
 ?>
 
-<h2>Messages</h2>
+<h2>Conversation</h2>
 
-<?php while($row = mysqli_fetch_assoc($objResult)) {
+<div style="border:1px solid #ccc;padding:10px;height:300px;overflow:auto;">
 
-$otherID = $row["user_id"];
+<?php while($row = mysqli_fetch_assoc($objResult)) { ?>
 
-/*
-counts unread messages
-*/
-$sUnreadSQL = "SELECT COUNT(*) AS unread FROM messages WHERE sender_id = $otherID AND receiver_id = $userID AND is_read = 0";
+<p>
 
-$unreadResult = mysqli_query($objConnection, $sUnreadSQL);
-$unread = mysqli_fetch_assoc($unreadResult)["unread"];
-?>
+<b>
 
-<div style="border:1px solid #ccc; padding:10px; margin-bottom:10px;">
+<?php echo ($row["sender_id"] == $_SESSION["user_id"]) ? "You" : "Them"; ?>:
 
-    <h3>
-        <?php echo $row["username"]; ?>
+</b>
 
-        <?php if($unread > 0) { ?>
-            <span style="background:red;color:white;padding:3px 8px;border-radius:50%;">
-                <?php echo $unread; ?>
-            </span>
-        <?php } ?>
-    </h3>
+<?php echo htmlspecialchars($row["message"]); ?>
 
-    <!-- Opens chat with selected user -->
-    <a href="chat.php?id=<?php echo $otherID; ?>">
-        Open Chat
-    </a>
+</p>
+
+<?php } ?>
 
 </div>
 
-<?php } ?>
+<br>
+
+<form method="POST">
+
+<input
+type="text"
+name="message"
+placeholder="Type message..."
+required>
+
+<input
+type="submit"
+name="btnSend"
+value="Send">
+
+</form>
 
 <?php include("includes/footer.php"); ?>
